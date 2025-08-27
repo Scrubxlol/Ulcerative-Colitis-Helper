@@ -324,8 +324,8 @@
   const pad = n => String(n).padStart(2,'0');
   const toDateKey = (d=new Date()) => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
   const toTime = (d=new Date()) => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
-  const toISO = (d=new Date()) => new Date(d.getTime() - d.getTimezoneOffset()*60000).toISOString(); // local ISO
-  const fromLocalISO = iso => new Date(iso);
+  const toISO = (d=new Date()) => d.toISOString();
+    const fromLocalISO = iso => new Date(iso);
 
   const loadDB = () => {
     try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || { days:{}, fastingEvents: [] }; }
@@ -470,7 +470,9 @@
   btnManual.addEventListener('click', ()=>{
     manualBox.style.display = manualBox.style.display==='none' ? 'block' : 'none';
     if (manualBox.style.display==='block'){
-      manualTime.value = new Date().toISOString().slice(0,16);
+      const now = new Date();
+manualTime.value = new Date(now.getTime() - now.getTimezoneOffset()*60000)
+  .toISOString().slice(0,16);
       manualType.value = 'urine';
       stoolExtras.style.display = 'none';
       stoolConsistency.style.display = 'none';
