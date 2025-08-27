@@ -1,0 +1,714 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Health Tracker – Toilette • Fasten • Medikamente</title>
+  <meta name="description" content="Lokale Web App zum Tracken von Toilettengängen, Intervallfasten und Medikamenten (Morgen/Abend). Speichert lokal und erlaubt TXT/JSON-Export." />
+  <style>
+    :root {
+      --bg: #0b1020;
+      --card: #131a32;
+      --muted: #8aa0c8;
+      --text: #e8eeff;
+      --accent: #6aa7ff;
+      --accent-2: #79f2c0;
+      --danger: #ff6b6b;
+      --ok: #9cff6a;
+      --shadow: 0 10px 30px rgba(0,0,0,.35);
+      --radius: 16px;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0; background: linear-gradient(180deg, #0b1020 0%, #090e1b 100%);
+      color: var(--text); font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+    }
+    header {
+      position: sticky; top: 0; z-index: 5;
+      background: rgba(9,14,27,.75); backdrop-filter: blur(8px);
+      border-bottom: 1px solid rgba(255,255,255,.06);
+    }
+    .container { max-width: 1100px; margin: 0 auto; padding: 18px 16px; }
+    .title { display:flex; align-items:center; gap: 12px; }
+    .title h1 { font-size: clamp(20px, 3vw, 28px); margin: 0; letter-spacing: .3px; }
+    .subtitle { color: var(--muted); font-size: 14px; margin-top: 2px; }
+
+    .grid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 12px; margin-top: 14px; }
+    @media (max-width: 900px){ .grid{ grid-template-columns: 1fr; } }
+
+    .tile {
+      background: linear-gradient(180deg, rgba(255,255,255,.02), rgba(255,255,255,.01));
+      border: 1px solid rgba(255,255,255,.08);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 14px; display: flex; align-items: center; gap: 12px; cursor: pointer;
+      transition: transform .12s ease, border-color .2s ease, background .2s ease;
+    }
+    .tile:hover { transform: translateY(-2px); }
+    .tile.active { border-color: rgba(122,199,255,.6); background: rgba(106,167,255,.07); }
+    .tile .ico { width: 44px; height: 44px; border-radius: 12px; display:grid; place-items:center; font-size: 24px; }
+    .ico.toilet { background: rgba(106,167,255,.18); color: var(--accent); }
+    .ico.fast { background: rgba(121,242,192,.2); color: var(--accent-2); }
+    .ico.meds { background: rgba(255,107,107,.2); color: var(--danger); }
+    .tile .label { font-weight: 700; letter-spacing: .25px; }
+    .tile .hint { color: var(--muted); font-size: 12px; }
+
+    .panel {
+      display: none; margin-top: 12px; border-radius: var(--radius);
+      background: linear-gradient(180deg, rgba(255,255,255,.025), rgba(255,255,255,.01));
+      border: 1px solid rgba(255,255,255,.08);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+    .panel.active { display: block; }
+    .panel header { position: sticky; top: 60px; background: rgba(9,14,27,.75); backdrop-filter: blur(6px);
+      border: 0; padding: 12px 16px; }
+
+    .section { padding: 16px; }
+    .row { display: flex; flex-wrap: wrap; gap: 12px; }
+    .grow { flex: 1 1 180px; }
+    .card { background: var(--card); border: 1px solid rgba(255,255,255,.08); border-radius: 14px; padding: 14px; }
+
+    h2, h3 { margin: 0 0 8px 0; }
+    h2 { font-size: 20px; }
+    h3 { font-size: 16px; color: var(--muted); font-weight: 600; }
+    label { font-size: 13px; color: var(--muted); }
+    input, select, textarea, button {
+      font: inherit; color: var(--text);
+      background: rgba(255,255,255,.06);
+      border: 1px solid rgba(255,255,255,.12);
+      border-radius: 10px; padding: 10px 12px;
+      outline: none; min-height: 40px;
+    }
+    input[type="time"]{ padding: 8px; }
+    textarea { width: 100%; min-height: 70px; resize: vertical; }
+
+    button { cursor: pointer; transition: transform .06s ease, background .2s ease, border-color .2s ease; }
+    button:hover { transform: translateY(-1px); }
+    .btn { background: rgba(106,167,255,.15); border-color: rgba(106,167,255,.5); }
+    .btn.alt { background: rgba(121,242,192,.15); border-color: rgba(121,242,192,.5); }
+    .btn.warn{ background: rgba(255,107,107,.15); border-color: rgba(255,107,107,.5); }
+
+    .stat { display:flex; align-items:center; gap:10px; padding: 10px 12px; border-radius: 12px; background: rgba(255,255,255,.05); }
+    .stat b { font-size: 18px; }
+
+    .list { display: grid; gap: 8px; }
+    .entry { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; padding: 10px; border: 1px dashed rgba(255,255,255,.15); border-radius: 12px; }
+    .entry small { color: var(--muted); }
+
+    .muted { color: var(--muted); }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+
+    .toolbar { display:flex; flex-wrap:wrap; gap: 8px; }
+    .spacer { flex: 1 1 auto; }
+    .hr { height: 1px; background: rgba(255,255,255,.08); margin: 12px 0; border: 0; }
+
+    .kpis { display:grid; gap: 10px; grid-template-columns: repeat(3, minmax(0,1fr)); }
+    @media (max-width: 700px){ .kpis{ grid-template-columns: 1fr; } }
+
+    .table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    .table th, .table td{ padding: 8px 10px; border-bottom: 1px solid rgba(255,255,255,.08); text-align: left; }
+    .table th { color: var(--muted); font-weight: 600; }
+
+    .footer { margin: 18px 0 40px; color: var(--muted); font-size: 12px; text-align: center; }
+    .link { color: var(--accent); text-decoration: underline; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="container">
+      <div class="title">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 3a9 9 0 100 18 9 9 0 000-18z" stroke="currentColor" stroke-width="1.3" opacity=".25"/><path d="M12 6v6l4 2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+        <h1>Health Tracker</h1>
+      </div>
+      <div class="subtitle">Toilette • Intervallfasten • Medikamente — alles lokal, mit Export als TXT/JSON.</div>
+      <div class="grid" style="margin-top:14px">
+        <div class="tile" data-target="#toiletPanel">
+          <div class="ico toilet">🚽</div>
+          <div>
+            <div class="label">Toilette</div>
+            <div class="hint">Besuche & Stuhlgang (inkl. Optionen)</div>
+          </div>
+        </div>
+        <div class="tile" data-target="#fastPanel">
+          <div class="ico fast">⏳</div>
+          <div>
+            <div class="label">Intervallfasten</div>
+            <div class="hint">Letzte & erste Mahlzeit • Dauer</div>
+          </div>
+        </div>
+        <div class="tile" data-target="#medsPanel">
+          <div class="ico meds">💊</div>
+          <div>
+            <div class="label">Medikamente</div>
+            <div class="hint">Morgen/Abend abhaken</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <!-- Toilette Panel -->
+    <section class="panel" id="toiletPanel">
+      <div class="section">
+        <h2>Toilette</h2>
+        <p class="muted">Tracke Toilettengänge. Für Stuhlgang zusätzlich Blut <i>(ja/nein)</i> und Konsistenz <i>(fest/mittel/flüssig)</i>. Definiere zudem deine Aufwachzeit für die Tagesauswertung.</p>
+        <div class="row">
+          <div class="card grow">
+            <h3>Heute</h3>
+            <div class="row" style="align-items:flex-end">
+              <div class="grow">
+                <label>Aufwachzeit</label>
+                <input type="time" id="wakeTime" />
+              </div>
+              <div>
+                <label>Cutoff für Phasenberechnung</label>
+                <input type="time" id="toiletCutoff" value="22:00" />
+                <div class="muted" style="font-size:12px">Stuhlgänge nach dieser Zeit werden <b>gezählt</b>, aber bei der Phase ignoriert.</div>
+              </div>
+            </div>
+            <div class="hr"></div>
+            <div class="toolbar">
+              <button class="btn" id="btnUrineNow">Jetzt Urin</button>
+              <button class="btn" id="btnStoolNow">Jetzt Stuhlgang</button>
+              <div class="spacer"></div>
+              <button class="btn alt" id="btnManualAdd">Manuell hinzufügen…</button>
+            </div>
+            <div id="manualForm" class="card" style="margin-top:10px; display:none">
+              <div class="row">
+                <div>
+                  <label>Zeit</label>
+                  <input type="datetime-local" id="manualTime"/>
+                </div>
+                <div>
+                  <label>Art</label>
+                  <select id="manualType">
+                    <option value="urine">Urin</option>
+                    <option value="stool">Stuhlgang</option>
+                  </select>
+                </div>
+                <div id="stoolExtras" style="display:none">
+                  <label>Blutig?</label>
+                  <select id="manualBlood">
+                    <option value="nein">Nein</option>
+                    <option value="ja">Ja</option>
+                  </select>
+                </div>
+                <div id="stoolConsistency" style="display:none">
+                  <label>Konsistenz</label>
+                  <select id="manualConsistency">
+                    <option value="fest">Fest</option>
+                    <option value="mittel">Mittel</option>
+                    <option value="flüssig">Flüssig</option>
+                  </select>
+                </div>
+              </div>
+              <div style="margin-top:8px">
+                <label>Notiz (optional)</label>
+                <textarea id="manualNote" placeholder="…"></textarea>
+              </div>
+              <div class="toolbar" style="margin-top:8px">
+                <button class="btn" id="btnManualSave">Speichern</button>
+                <button class="btn warn" id="btnManualCancel">Abbrechen</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="card grow">
+            <h3>Übersicht heute</h3>
+            <div class="kpis">
+              <div class="stat"><span>💩</span><div><div class="muted">Stuhlgänge</div><b id="statStoolCount">0</b></div></div>
+              <div class="stat"><span>⏱️</span><div><div class="muted">Toilettenphase</div><b id="statToiletPhase">–</b></div></div>
+              <div class="stat"><span>🕓</span><div><div class="muted">Letzter Stuhl (≤ Cutoff)</div><b id="statLastStool">–</b></div></div>
+            </div>
+            <div class="hr"></div>
+            <div class="list" id="toiletList"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Fasten Panel -->
+    <section class="panel" id="fastPanel">
+      <div class="section">
+        <h2>Intervallfasten</h2>
+        <p class="muted">Einfach klicken, wenn du die <b>letzte Mahlzeit</b> hattest (Fasten startet) und wenn du die <b>erste Mahlzeit</b> hattest (Fasten endet). Die App berechnet Dauer & Durchschnitt.</p>
+        <div class="card">
+          <div class="toolbar">
+            <button class="btn alt" id="btnLastMeal">Letzte Mahlzeit (Start)</button>
+            <button class="btn" id="btnFirstMeal">Erste Mahlzeit (Ende)</button>
+            <div class="spacer"></div>
+            <button class="btn" id="btnUndoFast">Letzten Eintrag rückgängig</button>
+          </div>
+          <div class="row" style="margin-top:12px">
+            <div class="grow">
+              <div class="stat"><span>📈</span><div><div class="muted">Ø letzte 7 Tage</div><b id="avg7">–</b></div></div>
+            </div>
+            <div class="grow">
+              <div class="stat"><span>📊</span><div><div class="muted">Ø letzte 30 Tage</div><b id="avg30">–</b></div></div>
+            </div>
+          </div>
+          <div class="hr"></div>
+          <h3>Fasten-Sessions</h3>
+          <table class="table" id="fastTable">
+            <thead><tr><th>Start</th><th>Ende</th><th>Dauer</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- Medikamente Panel -->
+    <section class="panel" id="medsPanel">
+      <div class="section">
+        <h2>Medikamente</h2>
+        <p class="muted">Pro Tag abhaken: <b>Morgen</b> & <b>Abend</b>. Optional kannst du vergangene Tage bearbeiten.</p>
+        <div class="card">
+          <div class="row" style="align-items:center">
+            <div class="grow">
+              <h3>Heute</h3>
+              <div class="row">
+                <label><input type="checkbox" id="medMorning"> Morgen genommen</label>
+                <label><input type="checkbox" id="medEvening"> Abend genommen</label>
+              </div>
+            </div>
+            <div>
+              <button class="btn" id="btnClearTodayMeds">Heute zurücksetzen</button>
+            </div>
+          </div>
+          <div class="hr"></div>
+          <h3>Letzte 7 Tage</h3>
+          <table class="table" id="medsTable">
+            <thead><tr><th>Datum</th><th>Morgen</th><th>Abend</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- Export / Backup -->
+    <section class="panel active" id="exportPanel" style="display:block;">
+      <div class="section">
+        <h2>Export & Sicherung</h2>
+        <div class="row">
+          <div class="card grow">
+            <h3>Datei-Export</h3>
+            <div class="toolbar">
+              <button class="btn" id="btnExportTxt">Export als TXT</button>
+              <button class="btn alt" id="btnExportJson">Export als JSON</button>
+              <label class="btn warn" for="importJson">JSON importieren</label>
+              <input type="file" id="importJson" accept="application/json" style="display:none"/>
+            </div>
+            <p class="muted">TXT eignet sich zum Öffnen mit Notepad o.ä. – enthält eine kompakte Zusammenfassung und die Rohdaten.</p>
+          </div>
+          <div class="card grow">
+            <h3>Hinweise</h3>
+            <ul class="muted">
+              <li>Alles wird nur lokal im Browser gespeichert (<span class="mono">localStorage</span>).</li>
+              <li>Du kannst die Datei <b>index.html</b> direkt auf GitHub hochladen (z.B. als GitHub Pages).</li>
+              <li>Keine Server, keine Logins – deine Daten bleiben bei dir.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div class="footer">© 2025 – Lokale Gesundheits‑Tracker Demo. – <span class="link" id="linkResetAll">Alles löschen</span></div>
+  </main>
+
+  <script>
+  // ============ Utilities ============
+  const STORAGE_KEY = 'healthTrackerData.v1';
+  const pad = n => String(n).padStart(2,'0');
+  const toDateKey = (d=new Date()) => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+  const toTime = (d=new Date()) => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  const toISO = (d=new Date()) => new Date(d.getTime() - d.getTimezoneOffset()*60000).toISOString(); // local ISO
+  const fromLocalISO = iso => new Date(iso);
+
+  const loadDB = () => {
+    try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || { days:{}, fastingEvents: [] }; }
+    catch { return { days:{}, fastingEvents: [] }; }
+  }
+  const saveDB = () => localStorage.setItem(STORAGE_KEY, JSON.stringify(DB));
+
+  const ensureDay = (key) => {
+    if (!DB.days[key]) DB.days[key] = { wakeTime: null, toilets: [], meds: { morning: false, evening: false } };
+    if (!DB.days[key].meds) DB.days[key].meds = { morning:false, evening:false };
+    if (!DB.days[key].toilets) DB.days[key].toilets = [];
+    return DB.days[key];
+  }
+
+  const parseTimeToDate = (dateKey, timeStr) => {
+    const [y,m,d] = dateKey.split('-').map(Number);
+    const [hh,mm] = (timeStr||'00:00').split(':').map(Number);
+    return new Date(y, m-1, d, hh, mm, 0, 0);
+  }
+
+  const fmtDuration = (ms) => {
+    if (ms == null || isNaN(ms) || ms < 0) return '–';
+    const totalMin = Math.round(ms/60000);
+    const h = Math.floor(totalMin/60), m = totalMin % 60;
+    return `${h}h ${pad(m)}m`;
+  }
+
+  let DB = loadDB();
+
+  // ============ UI Wiring: Tiles ============
+  const tiles = document.querySelectorAll('.tile');
+  const panels = document.querySelectorAll('.panel');
+  tiles.forEach(t => t.addEventListener('click', () => {
+    tiles.forEach(x => x.classList.remove('active'));
+    t.classList.add('active');
+    const target = t.getAttribute('data-target');
+    panels.forEach(p => p.classList.remove('active'));
+    if (target && document.querySelector(target)) {
+      document.querySelector(target).classList.add('active');
+      window.scrollTo({ top: document.querySelector('header').offsetHeight, behavior: 'smooth' });
+    }
+  }));
+
+  // ============ Toilet Logic ============
+  const wakeTimeEl = document.getElementById('wakeTime');
+  const cutoffEl = document.getElementById('toiletCutoff');
+  const listEl = document.getElementById('toiletList');
+  const stoolCountEl = document.getElementById('statStoolCount');
+  const phaseEl = document.getElementById('statToiletPhase');
+  const lastStoolEl = document.getElementById('statLastStool');
+  const btnUrineNow = document.getElementById('btnUrineNow');
+  const btnStoolNow = document.getElementById('btnStoolNow');
+  const btnManual = document.getElementById('btnManualAdd');
+  const manualBox = document.getElementById('manualForm');
+  const manualTime = document.getElementById('manualTime');
+  const manualType = document.getElementById('manualType');
+  const stoolExtras = document.getElementById('stoolExtras');
+  const stoolConsistency = document.getElementById('stoolConsistency');
+  const manualBlood = document.getElementById('manualBlood');
+  const manualConsistency = document.getElementById('manualConsistency');
+  const manualNote = document.getElementById('manualNote');
+  const btnManualSave = document.getElementById('btnManualSave');
+  const btnManualCancel = document.getElementById('btnManualCancel');
+
+  const renderToilet = () => {
+    const key = toDateKey();
+    const day = ensureDay(key);
+    wakeTimeEl.value = day.wakeTime || '';
+    const cutoff = cutoffEl.value || '22:00';
+
+    // Build entries list for today
+    const todayEntries = day.toilets.slice().sort((a,b)=>a.ts.localeCompare(b.ts));
+    listEl.innerHTML = '';
+    if (todayEntries.length === 0){
+      const empty = document.createElement('div');
+      empty.className = 'muted';
+      empty.textContent = 'Keine Einträge für heute.';
+      listEl.appendChild(empty);
+    } else {
+      todayEntries.forEach(e => {
+        const row = document.createElement('div');
+        row.className = 'entry';
+        const t = new Date(e.ts);
+        const tStr = `${pad(t.getHours())}:${pad(t.getMinutes())}`;
+        row.innerHTML = `<div class="mono">${tStr}</div>
+          <div>${e.type === 'stool' ? 'Stuhlgang' : 'Urin'} ${e.type==='stool' ? `<small class="muted">• Blut: ${e.blood?'Ja':'Nein'} • Konsistenz: ${e.consistency||'-'}</small>` : ''}
+          ${e.note? `<div class='muted'>${e.note}</div>`:''}
+          </div>
+          <button class="btn warn" data-del="${e.ts}">Löschen</button>`;
+        listEl.appendChild(row);
+      });
+      // Delete handlers
+      listEl.querySelectorAll('button[data-del]').forEach(btn => btn.addEventListener('click', () => {
+        const ts = btn.getAttribute('data-del');
+        DB.days[key].toilets = DB.days[key].toilets.filter(x => x.ts !== ts);
+        saveDB();
+        renderToilet();
+      }));
+    }
+
+    // KPI: stool count today
+    const stoolToday = todayEntries.filter(e=>e.type==='stool');
+    stoolCountEl.textContent = stoolToday.length;
+
+    // KPI: last stool before cutoff
+    const lastBeforeCutoff = (() => {
+      const last = stoolToday
+        .filter(e => {
+          const d = new Date(e.ts);
+          const c = parseTimeToDate(key, cutoff);
+          return d <= c; })
+        .sort((a,b)=>a.ts.localeCompare(b.ts))
+        .pop();
+      return last ? new Date(last.ts) : null;
+    })();
+    lastStoolEl.textContent = lastBeforeCutoff ? `${pad(lastBeforeCutoff.getHours())}:${pad(lastBeforeCutoff.getMinutes())}` : '–';
+
+    // KPI: toilet phase (wake -> last stool before cutoff)
+    if (day.wakeTime && lastBeforeCutoff){
+      const start = parseTimeToDate(key, day.wakeTime);
+      const dur = lastBeforeCutoff - start;
+      phaseEl.textContent = dur >= 0 ? fmtDuration(dur) : '–';
+    } else {
+      phaseEl.textContent = '–';
+    }
+  }
+
+  wakeTimeEl.addEventListener('change', () => { ensureDay(toDateKey()).wakeTime = wakeTimeEl.value || null; saveDB(); renderToilet(); });
+  cutoffEl.addEventListener('change', renderToilet);
+
+  btnUrineNow.addEventListener('click', () => {
+    const key = toDateKey(); ensureDay(key);
+    DB.days[key].toilets.push({ ts: toISO(new Date()), type: 'urine' });
+    saveDB(); renderToilet();
+  });
+  btnStoolNow.addEventListener('click', () => {
+    const key = toDateKey(); ensureDay(key);
+    DB.days[key].toilets.push({ ts: toISO(new Date()), type: 'stool', blood: false, consistency: 'mittel' });
+    saveDB(); renderToilet();
+  });
+
+  btnManual.addEventListener('click', ()=>{
+    manualBox.style.display = manualBox.style.display==='none' ? 'block' : 'none';
+    if (manualBox.style.display==='block'){
+      manualTime.value = new Date().toISOString().slice(0,16);
+      manualType.value = 'urine';
+      stoolExtras.style.display = 'none';
+      stoolConsistency.style.display = 'none';
+      manualNote.value = '';
+    }
+  });
+  manualType.addEventListener('change', ()=>{
+    const isStool = manualType.value==='stool';
+    stoolExtras.style.display = isStool ? 'block' : 'none';
+    stoolConsistency.style.display = isStool ? 'block' : 'none';
+  });
+  btnManualCancel.addEventListener('click', ()=> manualBox.style.display='none');
+  btnManualSave.addEventListener('click', ()=>{
+    const when = new Date(manualTime.value);
+    if (isNaN(+when)) { alert('Bitte gültige Zeit wählen.'); return; }
+    const type = manualType.value;
+    const key = toDateKey(when);
+    ensureDay(key);
+    const entry = { ts: toISO(when), type };
+    if (type==='stool'){
+      entry.blood = (manualBlood.value==='ja');
+      entry.consistency = manualConsistency.value;
+    }
+    const note = (manualNote.value||'').trim();
+    if (note) entry.note = note;
+    DB.days[key].toilets.push(entry);
+    saveDB(); manualBox.style.display='none'; renderToilet();
+  });
+
+  // ============ Fasting Logic ============
+  const btnLastMeal = document.getElementById('btnLastMeal');
+  const btnFirstMeal = document.getElementById('btnFirstMeal');
+  const btnUndoFast = document.getElementById('btnUndoFast');
+  const fastTableBody = document.querySelector('#fastTable tbody');
+  const avg7El = document.getElementById('avg7');
+  const avg30El = document.getElementById('avg30');
+
+  const addFastEvent = (type) => {
+    DB.fastingEvents.push({ type, ts: toISO(new Date()) });
+    DB.fastingEvents.sort((a,b)=>a.ts.localeCompare(b.ts));
+    saveDB(); renderFast();
+  }
+
+  const sessionsFromEvents = () => {
+    const events = DB.fastingEvents.slice().sort((a,b)=>a.ts.localeCompare(b.ts));
+    const sessions = [];
+    let pending = null;
+    for (const e of events){
+      if (e.type==='last') pending = e; // start fast
+      if (e.type==='first' && pending){
+        const start = new Date(pending.ts);
+        const end = new Date(e.ts);
+        if (end > start){ sessions.push({ start, end, durationMs: end - start }); }
+        pending = null;
+      }
+    }
+    return sessions;
+  }
+
+  const avgDuration = (days) => {
+    const msPerDay = 86400000;
+    const cutoff = Date.now() - days*msPerDay;
+    const sessions = sessionsFromEvents().filter(s => s.end.getTime() >= cutoff);
+    if (sessions.length===0) return null;
+    const avg = sessions.reduce((a,s)=>a+s.durationMs,0)/sessions.length;
+    return avg;
+  }
+
+  const renderFast = () => {
+    // Table
+    const sessions = sessionsFromEvents().slice(-50).reverse();
+    fastTableBody.innerHTML = '';
+    if (sessions.length===0){
+      const tr = document.createElement('tr');
+      tr.innerHTML = '<td colspan="3" class="muted">Noch keine vollständigen Sessions ("Letzte" + danach "Erste Mahlzeit").</td>';
+      fastTableBody.appendChild(tr);
+    } else {
+      sessions.forEach(s => {
+        const tr = document.createElement('tr');
+        const fmt = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+        tr.innerHTML = `<td class="mono">${fmt(s.start)}</td><td class="mono">${fmt(s.end)}</td><td>${fmtDuration(s.durationMs)}</td>`;
+        fastTableBody.appendChild(tr);
+      });
+    }
+    // Averages
+    const a7 = avgDuration(7), a30 = avgDuration(30);
+    avg7El.textContent = a7? fmtDuration(a7) : '–';
+    avg30El.textContent = a30? fmtDuration(a30) : '–';
+  }
+
+  btnLastMeal.addEventListener('click', ()=> addFastEvent('last'));
+  btnFirstMeal.addEventListener('click', ()=> addFastEvent('first'));
+  btnUndoFast.addEventListener('click', ()=>{
+    DB.fastingEvents.pop(); saveDB(); renderFast();
+  });
+
+  // ============ Meds Logic ============
+  const medMorning = document.getElementById('medMorning');
+  const medEvening = document.getElementById('medEvening');
+  const medsTableBody = document.querySelector('#medsTable tbody');
+  const btnClearTodayMeds = document.getElementById('btnClearTodayMeds');
+
+  const renderMeds = () => {
+    const key = toDateKey();
+    const day = ensureDay(key);
+    medMorning.checked = !!day.meds.morning;
+    medEvening.checked = !!day.meds.evening;
+
+    // Last 7 days table (including today)
+    medsTableBody.innerHTML = '';
+    for (let i=6; i>=0; i--){
+      const d = new Date(); d.setDate(d.getDate()-i);
+      const k = toDateKey(d); const di = ensureDay(k);
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td class="mono">${k}</td>
+        <td><input type="checkbox" data-day="${k}" data-part="morning" ${di.meds.morning? 'checked':''}></td>
+        <td><input type="checkbox" data-day="${k}" data-part="evening" ${di.meds.evening? 'checked':''}></td>`;
+      medsTableBody.appendChild(tr);
+    }
+
+    medsTableBody.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+      cb.addEventListener('change', ()=>{
+        const k = cb.getAttribute('data-day');
+        const part = cb.getAttribute('data-part');
+        ensureDay(k).meds[part] = cb.checked; saveDB();
+      });
+    });
+  }
+
+  medMorning.addEventListener('change', ()=>{ ensureDay(toDateKey()).meds.morning = medMorning.checked; saveDB(); renderMeds(); });
+  medEvening.addEventListener('change', ()=>{ ensureDay(toDateKey()).meds.evening = medEvening.checked; saveDB(); renderMeds(); });
+  btnClearTodayMeds.addEventListener('click', ()=>{ const d = ensureDay(toDateKey()); d.meds.morning=false; d.meds.evening=false; saveDB(); renderMeds(); });
+
+  // ============ Export / Import / Reset ============
+  const btnExportTxt = document.getElementById('btnExportTxt');
+  const btnExportJson = document.getElementById('btnExportJson');
+  const importJson = document.getElementById('importJson');
+  const linkResetAll = document.getElementById('linkResetAll');
+
+  function download(filename, text) {
+    const blob = new Blob([text], {type: 'text/plain;charset=utf-8'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = filename; a.click();
+    setTimeout(()=> URL.revokeObjectURL(url), 2500);
+  }
+
+  const buildTxtReport = () => {
+    const lines = [];
+    lines.push('Health Tracker – Export');
+    lines.push(`Erstellt am: ${new Date().toLocaleString()}`);
+    lines.push('');
+
+    // Per-Day Summary (sorted)
+    const keys = Object.keys(DB.days).sort();
+    for (const k of keys){
+      const day = ensureDay(k);
+      lines.push(`# ${k}`);
+      lines.push(`Aufwachzeit: ${day.wakeTime || '-'}
+`);
+
+      const cutoff = '22:00';
+      const stool = day.toilets.filter(e=>e.type==='stool').sort((a,b)=>a.ts.localeCompare(b.ts));
+      const lastBefore = stool.filter(e=> new Date(e.ts) <= parseTimeToDate(k, cutoff)).pop();
+      const phase = (day.wakeTime && lastBefore) ? fmtDuration(new Date(lastBefore.ts) - parseTimeToDate(k, day.wakeTime)) : '–';
+
+      lines.push(`Stuhlgänge: ${stool.length}`);
+      lines.push(`Toilettenphase (Aufwachen → letzter Stuhl ≤ ${cutoff}): ${phase}`);
+      lines.push('Toilettengänge:');
+      for (const e of day.toilets.sort((a,b)=>a.ts.localeCompare(b.ts))){
+        const t = new Date(e.ts);
+        const tStr = `${pad(t.getHours())}:${pad(t.getMinutes())}`;
+        if (e.type==='stool'){
+          lines.push(`  - ${tStr} Stuhlgang | Blut: ${e.blood?'Ja':'Nein'} | Konsistenz: ${e.consistency||'-'}${e.note? ' | Notiz: '+e.note:''}`);
+        } else {
+          lines.push(`  - ${tStr} Urin${e.note? ' | Notiz: '+e.note:''}`);
+        }
+      }
+      lines.push('Medikamente: ' + `Morgen=${day.meds.morning?'✔':'✘'}, Abend=${day.meds.evening?'✔':'✘'}`);
+      lines.push('');
+    }
+
+    // Fasting Sessions Summary
+    lines.push('## Intervallfasten');
+    const sessions = sessionsFromEvents();
+    if (sessions.length===0){
+      lines.push('Keine Sessions.');
+    } else {
+      for (const s of sessions){
+        lines.push(`- ${s.start.toLocaleString()} → ${s.end.toLocaleString()} | Dauer: ${fmtDuration(s.durationMs)}`);
+      }
+      const a7 = avgDuration(7), a30 = avgDuration(30);
+      lines.push(`Ø (7 Tage): ${a7? fmtDuration(a7) : '–'}`);
+      lines.push(`Ø (30 Tage): ${a30? fmtDuration(a30) : '–'}`);
+    }
+
+    lines.push('
+Rohdaten (JSON):');
+    lines.push(JSON.stringify(DB, null, 2));
+
+    return lines.join('
+');
+  }
+
+  btnExportTxt.addEventListener('click', ()=> download(`health-tracker-\${toDateKey()}.txt`, buildTxtReport()));
+  btnExportJson.addEventListener('click', ()=> download(`health-tracker-\${toDateKey()}.json`, JSON.stringify(DB, null, 2)));
+
+  importJson.addEventListener('change', (e)=>{
+    const file = e.target.files?.[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const data = JSON.parse(reader.result);
+        if (!data || typeof data !== 'object') throw new Error('Ungültiges JSON');
+        DB = { days: data.days || {}, fastingEvents: data.fastingEvents || [] };
+        saveDB();
+        renderAll();
+        alert('Import erfolgreich.');
+      } catch(err){ alert('Import fehlgeschlagen: '+err.message); }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  });
+
+  linkResetAll.addEventListener('click', ()=>{
+    if (confirm('Wirklich ALLE Daten löschen? Dies kann nicht rückgängig gemacht werden.')){
+      localStorage.removeItem(STORAGE_KEY); DB = { days:{}, fastingEvents:[] }; renderAll();
+    }
+  });
+
+  // ============ Initial State ============
+  const renderAll = () => { renderToilet(); renderFast(); renderMeds(); }
+  renderAll();
+
+  // Default: open Toilet panel on first use
+  if (!localStorage.getItem(STORAGE_KEY)){
+    document.querySelector('[data-target="#toiletPanel"]').classList.add('active');
+    document.getElementById('toiletPanel').classList.add('active');
+  }
+  </script>
+</body>
+</html>
